@@ -218,7 +218,7 @@ async def show_model(request: Request) -> JSONResponse:
     arch: str = v0.get("arch", "llama")
     quant: str = v0.get("quantization", "unknown")
     compat: str = v0.get("compatibility_type", "gguf")
-    ctx_len: int = v0.get("max_context_length", 0)
+    ctx_len: int = v0.get("loaded_context_length") or v0.get("max_context_length", 0)
 
     capabilities = capabilities_from_lms(lms_type, arch, model)
 
