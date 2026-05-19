@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .config import (
     CONNECT_TIMEOUT,
     LM_STUDIO_BASE,
+    LMS_API_KEY,
     LISTEN_HOST,
     LISTEN_PORT,
     OLLAMA_VERSION,
@@ -46,8 +47,10 @@ def _get_client() -> httpx.AsyncClient:
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     global _client
     timeout = httpx.Timeout(REQUEST_TIMEOUT, connect=CONNECT_TIMEOUT)
-    _client = httpx.AsyncClient(base_url=LM_STUDIO_BASE, timeout=timeout)
-    log.info("Proxy listening on %s:%d  →  %s", LISTEN_HOST, LISTEN_PORT, LM_STUDIO_BASE)
+    default_headers = {"Authorization": f"Bearer {LMS_API_KEY}"} if LMS_API_KEY else {}
+    _client = httpx.AsyncClient(base_url=LM_STUDIO_BASE, timeout=timeout, headers=default_headers)
+    auth_status = "key configured" if LMS_API_KEY else "no auth"
+    log.info("Proxy listening on %s:%d  →  %s  (%s)", LISTEN_HOST, LISTEN_PORT, LM_STUDIO_BASE, auth_status)
     yield
     await _client.aclose()
     log.info("Proxy shut down.")
@@ -316,7 +319,10 @@ async def v1_passthrough(path: str, request: Request):
         url = f"{url}?{request.url.query}"
 
     body = await request.body()
-    skip = {"host", "content-length", "transfer-encoding", "connection"}
+    # Strip hop-by-hop headers and the client's Authorization header.
+    # The httpx client injects the LMS_API_KEY bearer token automatically
+    # via its default headers, so we must not let the client's auth overwrite it.
+    skip = {"host", "content-length", "transfer-encoding", "connection", "authorization"}
     headers = {k: v for k, v in request.headers.items() if k.lower() not in skip}
 
     log.info("passthrough  %s /v1/%s", request.method, path)
